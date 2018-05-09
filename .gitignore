@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.png
+data
+raw_data
+BDA_pesentation.key
+GAMMnullprior.RData
+bda_project_instructions_dtu.pdf
+BDA_project.Rproj
+.DS_Store

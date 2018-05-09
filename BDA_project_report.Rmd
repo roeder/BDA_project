@@ -1,0 +1,48 @@
+---
+title: "Gender, Degrees and Wages: <br /><small>The Bayesian Workflow Applied to US Census Data</small>"
+author: "Thilde Terkelsen & Timo Röder"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  tufte::tufte_html:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      results = "hide", 
+                      warning = FALSE, 
+                      message = FALSE,
+                      fig.align = "center")
+
+library(tufte)
+```
+
+## Introduction
+In this project we apply the Bayesian workflow to US census data from the years 2012 to 2016 in order to model wages and gender wage differences across several academic fields. 
+
+The gender wage gap, i.e. the average difference in pay between men and women, 
+continues to be a subject of great debate in academia, media, politics as well as in more informal settings.
+Extensive studies on the wage gap's underlying mechanisms and its historical trends have arrived at somewhat varying conclusions. 
+This is not too surprising: setting up appropriate study designs and statistical models to study people's wages is a fairly complex endeavour, as there are countless factors influencing the wage any individual receives. 
+Variables such as educational level, field of study, maternity leave, work-life balance or even the income of an individual's parents, to name a few, confound the question of whether the differences in salaries observed is in fact due to gender bias or simply an artefact of other social, economic or familial circumstances.
+
+An extensive report titled “Graduating to a Pay Gap” by Corbett and Hill (2012) [^1] explores the gender difference in US wages one year after graduation. 
+Corbett and Hill compared the salaries of recent graduates who reported working the same number of hours per week, and found that one year after graduation women earned ~18% less than their male counterparts. 
+As there are differences regarding the college majors and jobs that men and women tend to choose -- for instance, men are more likely to choose fields with relatively higher salaries such as engineering and computer science -- the study grouped college majors into more general categories.
+Analyses were then performed seperately for each category and compared afterwards.
+While the study only found minor wage differences for majors in humanities, education and health sciences, there were significant gender wage gaps within the fields of engineering, computer science, business and social sciences. 
+
+While the gender wage gap has shrunk in the US and other developed countries over the last 30 years, this wage convergence seems to stagnate at the moment [^2]. 
+Along similar lines, a recent study of historical labour data has questioned the notion that some of the gender wage gap can still be attributed to gender differences in education [^3]. 
+In the study, Blau and Kahn show that while in 1980 approximately 21.1% of the wage gap could be explained by work experience and 2.6% by educational level, by 2010 those numbers have decreased to 14.1% and -5.9% respectively, indicating that education is not a factor at all -- if anything, women nowadays earn too little compared to their educational level.
+
+While we cannot claim that the presented work provides substantial answers to the unsolved questions surrounding the gender wage gap, we hope that our project report is still an informative and enjoyable read.
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+[^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
+
+[^2]: Heathcote, Jonathan, Kjetil Storesletten, and Giovanni L. Violante. "The macroeconomic implications of rising wage inequality in the United States." Journal of political economy 118.4 (2010): 681-722.
+
+[^3]: Blau, Francine D., and Lawrence M. Kahn. "The gender wage gap: Extent, trends, and explanations." Journal of Economic Literature 55.3 (2017): 789-865.
