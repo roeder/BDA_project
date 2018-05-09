@@ -39,7 +39,7 @@ In the study, Blau and Kahn show that while in 1980 approximately 21.1% of the w
 
 While we cannot claim that the presented work provides substantial answers to the unsolved questions surrounding the gender wage gap, we hope that our project report is still an informative and enjoyable read.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot. It really was
 
 [^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
 
