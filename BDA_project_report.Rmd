@@ -136,6 +136,17 @@ Additionally, these college majors are grouped into categories as used in a majo
 You can find the R script we used to merge datasets [on GitHub](https://github.com/roeder/BDA_project/blob/master/scripts/aggregate_us_16.R).
 This script also converts all wages reported before 2016 to inflation-adjusted wages equivalent to 2016 dollars, before writing selected columns for the 3,489,070 entries to a file called `selected_vars.csv`.
 
+## Intermission: what is it we actually want to do?
+Before moving on with the data preparation steps, it is probably a good idea to set the stage regarding what we want to model and why.
+Hopefully, this will make some of the following sections easier to follow.
+
+As touched upon in the introduction, our intention here is to run relatively straightforward hierarchical regression models in order to model wages across different ages.
+Doing this in a Bayesian setting of course allows us to draw posterior predictive samples from the fitted models and we can use these posterior draws to answer some questions about the data.
+
+For instance, you will see that the wage gap in absolute dollar values is substantially smaller when looking at education graduates as opposed to business graduates. 
+However, wages are generally lower in the education group, so the observation about the wage gap might just be a side effect of this general difference in wages.
+Drawing posterior predicitve samples allows us to check if the difference in the wage gap holds up when looking at relative values rather than absolute ones.
+
 ## Selecting the data subset
 The file `selected_vars.csv` is the starting point for our actual analysis:
 ```{r starting_csv, cache=TRUE}
@@ -192,7 +203,7 @@ We can see that both total number and gender ratio of entries for the two states
 
 ## Data summaries
 In order to get an overview of the general trend in wages as a function of age, we plot the mean and variation of yearly wages across the age range from 20 to 70:
-```{r data_time_plot, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5}
+```{r data_time_plot, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 library(ggplot2)
 nytx_df %>% 
   filter(AGEP >= 20,
@@ -210,7 +221,15 @@ nytx_df %>%
   custom_ggtheme
 ```
 
-We can see differences in wages as well as in the gender wage gap when comapring the different panels.
+We can see differences in wages, slopes as well as in the gender wage gap when comparing the different panels.
+Nothing here is too surprising: business graduates have the highest earning potential, followed by graduates in the field of health, and education graduates coming in last.
+Furthermore, it appears that wages grow steadily through people's thirties and forties until growth starts to stall around the age of fifty.
+This observation is fairly consistent across all panels.
+
+Looking at the gender wage gap, the gap is consistently smallest within education graduates (at least in terms of absolute numbers). 
+While the gap within health and business ends up being roughly similar in older age cohorts, the way there is different:
+women with a business background seem to earn less than men right out of the gate, whereas wages only start to separate around age 35 for health graduates.
+
 On a more technical note, we can also see that there is a lot of variation in the wages within each age cohort.
 This is not unexpected, however it has implications for our model choice: 
 If we were to go ahead and use a regression model that directly models wage (with Gaussian noise) as a function of age, it is very likely that we would end up with negative wages when drawing posterior predictive samples from that model.
@@ -222,9 +241,9 @@ model_df1 <- nytx_df %>%
   mutate(log_wage = log(real_wage))
 ```
 
-While using a Gaussian distribution to describe the wage distribution at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages.
-We can see this in the violin plots of select age cohorts:
-```{r violins, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5}
+While using Gaussian distributions to describe the wage distributions at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages.
+We can see this in the violin plots of select age cohorts (we only show eight because it would start to get cramped with more age cohorts):
+```{r violins, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 model_df1 %>% 
   filter(AGEP %in% seq(25, 60, 5)) %>% 
   ggplot(., aes(x = factor(AGEP), y = log_wage)) +
@@ -234,6 +253,54 @@ model_df1 %>%
   ylab("log-transformed yearly wages") +
   facet_grid(state ~ Major_Category) +
   custom_ggtheme
+```
+
+# Linear model: a simple start
+To kick things off, we fit a hierarchical generalised linear model with Gaussian noise.
+As we have discovered when looking at the data summary earlier, wages start to stagnate around the age of fifty.
+Therefore, we will only fit the linear model in the age span 25 to 50 -- this is where the wage growth happens.
+```{r filter_lin}
+lin_df <- model_df1 %>% 
+  filter(AGEP >= 25,
+         AGEP <= 50)
+```
+
+The resulting data frame `lin_df` still contains 85,843 entries.
+In order to keep computation times manageable, we reduce the size of the dataset by taking a random sample of 5,000 entries:
+```{r sample_lin}
+set.seed(42)
+prototype_lin_df <- lin_df %>% 
+  sample_n(size = 5000)
+```
+
+## Model fitting & convergence diagnostics
+We can now go ahead and fit a hierarchical generalised linear model using the `stan_glmer()` function from `rstanarm`.
+Log-transformed wages will be fitted as a linear function of age with Gaussian noise.
+We want to allow for the slope of this function to be different between the genders, so we add `sex` as a grouping term.
+In addition, we specify the hierarchical groupings `Major_Category` and `state`.
+
+Sampling takes place with `rstanarm`'s default settings: four chains with 4,000 samples, 2,000 of which are warmup samples.
+Default priors are `N(0, 2.5)` for regression coefficients, `N(0, 10)` for intercepts and `exponential(1)` for `sigma` parameters of the Gaussian noise.
+Note that the prior parameters apply after the regression's predictors are centered.
+```{r load_stan}
+library(rstan)
+library(rstanarm)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores() - 1)
+```
+```{r fit_lin_model, eval=FALSE}
+lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + 
+                        (1 | Major_Category) + (1 | state),
+                           data = prototype_lin_df, family = gaussian())
+```
+```{r load_lin_model, echo=FALSE}
+load("data/lin42.RData")
+```
+
+Let's have a look at the model fit summary, including parameter estimates and convergence diagnostics:
+```{r lin_summary, results='asis'}
+knitr::kable(lin_fit$stan_summary, digits = 2)
 ```
 
 

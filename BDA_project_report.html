@@ -55,8 +55,12 @@ if (window.hljs) {
 <li><a href="#introduction">Introduction</a></li>
 <li><a href="#data">Data</a><ul>
 <li><a href="#from-raw-data-to-start-of-analysis">From raw data to start of analysis</a></li>
+<li><a href="#intermission-what-is-it-we-actually-want-to-do">Intermission: what is it we actually want to do?</a></li>
 <li><a href="#selecting-the-data-subset">Selecting the data subset</a></li>
 <li><a href="#data-summaries">Data summaries</a></li>
+</ul></li>
+<li><a href="#linear-model-a-simple-start">Linear model: a simple start</a><ul>
+<li><a href="#model-fitting-convergence-diagnostics">Model fitting &amp; convergence diagnostics</a></li>
 </ul></li>
 </ul>
 </div>
@@ -81,6 +85,12 @@ if (window.hljs) {
 <p>In the first data cleaning step, we remove individuals who did not graduate college (see R script <a href="https://github.com/roeder/BDA_project/blob/master/scripts/clean_raw_csv.R">here</a>) and write the remaining 3,489,070 entries to a file called <code>us16_filtered.csv</code>.</p>
 <p>Next up, we add information about college majors by merging our dataset with a lookup file called <code>majors-list.csv</code> prepared by <em>FiveThirtyEight</em> (<a href="https://github.com/fivethirtyeight/data/blob/master/college-majors/majors-list.csv">GitHub link</a>). This lookup file matches the <code>FOD1P</code> codes used in the PUMS to actual names of the corresponding college majors. Additionally, these college majors are grouped into categories as used in a major 2011 study <label for="tufte-sn-4" class="margin-toggle sidenote-number">4</label><input type="checkbox" id="tufte-sn-4" class="margin-toggle"><span class="sidenote"><span class="sidenote-number">4</span> Carnevale et al., “What’s It Worth?: The Economic Value of College Majors.” Georgetown University Center on Education and the Workforce, 2011. <a href="http://cew.georgetown.edu/whatsitworth">Website</a></span>.</p>
 <p>You can find the R script we used to merge datasets <a href="https://github.com/roeder/BDA_project/blob/master/scripts/aggregate_us_16.R">on GitHub</a>. This script also converts all wages reported before 2016 to inflation-adjusted wages equivalent to 2016 dollars, before writing selected columns for the 3,489,070 entries to a file called <code>selected_vars.csv</code>.</p>
+</div>
+<div id="intermission-what-is-it-we-actually-want-to-do" class="section level2">
+<h2>Intermission: what is it we actually want to do?</h2>
+<p>Before moving on with the data preparation steps, it is probably a good idea to set the stage regarding what we want to model and why. Hopefully, this will make some of the following sections easier to follow.</p>
+<p>As touched upon in the introduction, our intention here is to run relatively straightforward hierarchical regression models in order to model wages across different ages. Doing this in a Bayesian setting of course allows us to draw posterior predictive samples from the fitted models and we can use these posterior draws to answer some questions about the data.</p>
+<p>For instance, you will see that the wage gap in absolute dollar values is substantially smaller when looking at education graduates as opposed to business graduates. However, wages are generally lower in the education group, so the observation about the wage gap might just be a side effect of this general difference in wages. Drawing posterior predicitve samples allows us to check if the difference in the wage gap holds up when looking at relative values rather than absolute ones.</p>
 </div>
 <div id="selecting-the-data-subset" class="section level2">
 <h2>Selecting the data subset</h2>
@@ -222,11 +232,13 @@ nytx_df %&gt;%
 <p class="caption marginnote shownote">
 </p>
 </div>
-<p>We can see differences in wages as well as in the gender wage gap when comapring the different panels. On a more technical note, we can also see that there is a lot of variation in the wages within each age cohort. This is not unexpected, however it has implications for our model choice: If we were to go ahead and use a regression model that directly models wage (with Gaussian noise) as a function of age, it is very likely that we would end up with negative wages when drawing posterior predictive samples from that model.</p>
+<p>We can see differences in wages, slopes as well as in the gender wage gap when comparing the different panels. Nothing here is too surprising: business graduates have the highest earning potential, followed by graduates in the field of health, and education graduates coming in last. Furthermore, it appears that wages grow steadily through people’s thirties and forties until growth starts to stall around the age of fifty. This observation is fairly consistent across all panels.</p>
+<p>Looking at the gender wage gap, the gap is consistently smallest within education graduates (at least in terms of absolute numbers). While the gap within health and business ends up being roughly similar in older age cohorts, the way there is different: women with a business background seem to earn less than men right out of the gate, whereas wages only start to separate around age 35 for health graduates.</p>
+<p>On a more technical note, we can also see that there is a lot of variation in the wages within each age cohort. This is not unexpected, however it has implications for our model choice: If we were to go ahead and use a regression model that directly models wage (with Gaussian noise) as a function of age, it is very likely that we would end up with negative wages when drawing posterior predictive samples from that model.</p>
 <p>In order to avoid this, we log-transform the wage numbers before running our models. This will ensure that our posterior predictive samples are positive (after exponentiating them) – and has the convenient side-effect of lowering the impact of high outlier wages.</p>
 <pre class="r"><code>model_df1 &lt;- nytx_df %&gt;% 
   mutate(log_wage = log(real_wage))</code></pre>
-<p>While using a Gaussian distribution to describe the wage distribution at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages. We can see this in the violin plots of select age cohorts:</p>
+<p>While using Gaussian distributions to describe the wage distributions at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages. We can see this in the violin plots of select age cohorts (we only show eight because it would start to get cramped with more age cohorts):</p>
 <pre class="r"><code>model_df1 %&gt;% 
   filter(AGEP %in% seq(25, 60, 5)) %&gt;% 
   ggplot(., aes(x = factor(AGEP), y = log_wage)) +
@@ -241,6 +253,383 @@ nytx_df %&gt;%
 <p class="caption marginnote shownote">
 </p>
 </div>
+</div>
+</div>
+<div id="linear-model-a-simple-start" class="section level1">
+<h1>Linear model: a simple start</h1>
+<p>To kick things off, we fit a hierarchical generalised linear model with Gaussian noise. As we have discovered when looking at the data summary earlier, wages start to stagnate around the age of fifty. Therefore, we will only fit the linear model in the age span 25 to 50 – this is where the wage growth happens.</p>
+<pre class="r"><code>lin_df &lt;- model_df1 %&gt;% 
+  filter(AGEP &gt;= 25,
+         AGEP &lt;= 50)</code></pre>
+<p>The resulting data frame <code>lin_df</code> still contains 85,843 entries. In order to keep computation times manageable, we reduce the size of the dataset by taking a random sample of 5,000 entries:</p>
+<pre class="r"><code>set.seed(42)
+prototype_lin_df &lt;- lin_df %&gt;% 
+  sample_n(size = 5000)</code></pre>
+<div id="model-fitting-convergence-diagnostics" class="section level2">
+<h2>Model fitting &amp; convergence diagnostics</h2>
+<p>We can now go ahead and fit a hierarchical generalised linear model using the <code>stan_glmer()</code> function from <code>rstanarm</code>. Log-transformed wages will be fitted as a linear function of age with Gaussian noise. We want to allow for the slope of this function to be different between the genders, so we add <code>sex</code> as a grouping term. In addition, we specify the hierarchical groupings <code>Major_Category</code> and <code>state</code>.</p>
+<p>Sampling takes place with <code>rstanarm</code>’s default settings: four chains with 4,000 samples, 2,000 of which are warmup samples. Default priors are <code>N(0, 2.5)</code> for regression coefficients, <code>N(0, 10)</code> for intercepts and <code>exponential(1)</code> for <code>sigma</code> parameters of the Gaussian noise. Note that the prior parameters apply after the regression’s predictors are centered.</p>
+<pre class="r"><code>library(rstan)
+library(rstanarm)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores() - 1)</code></pre>
+<pre class="r"><code>lin_fit &lt;- stan_glmer(log_wage ~ (AGEP | sex) + 
+                        (1 | Major_Category) + (1 | state),
+                           data = prototype_lin_df, family = gaussian())</code></pre>
+<p>Let’s have a look at the model fit summary, including parameter estimates and convergence diagnostics:</p>
+<pre class="r"><code>knitr::kable(lin_fit$stan_summary, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th></th>
+<th align="right">mean</th>
+<th align="right">se_mean</th>
+<th align="right">sd</th>
+<th align="right">2.5%</th>
+<th align="right">10%</th>
+<th align="right">25%</th>
+<th align="right">50%</th>
+<th align="right">75%</th>
+<th align="right">90%</th>
+<th align="right">97.5%</th>
+<th align="right">n_eff</th>
+<th align="right">Rhat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>(Intercept)</td>
+<td align="right">10.04</td>
+<td align="right">0.01</td>
+<td align="right">0.49</td>
+<td align="right">8.96</td>
+<td align="right">9.56</td>
+<td align="right">9.84</td>
+<td align="right">10.05</td>
+<td align="right">10.25</td>
+<td align="right">10.52</td>
+<td align="right">11.06</td>
+<td align="right">1183.90</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[(Intercept) Major_Category:Business]</td>
+<td align="right">0.08</td>
+<td align="right">0.01</td>
+<td align="right">0.27</td>
+<td align="right">-0.41</td>
+<td align="right">-0.15</td>
+<td align="right">-0.02</td>
+<td align="right">0.08</td>
+<td align="right">0.17</td>
+<td align="right">0.31</td>
+<td align="right">0.68</td>
+<td align="right">1193.12</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) Major_Category:Education]</td>
+<td align="right">-0.17</td>
+<td align="right">0.01</td>
+<td align="right">0.27</td>
+<td align="right">-0.67</td>
+<td align="right">-0.41</td>
+<td align="right">-0.27</td>
+<td align="right">-0.18</td>
+<td align="right">-0.09</td>
+<td align="right">0.05</td>
+<td align="right">0.42</td>
+<td align="right">1205.35</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[(Intercept) Major_Category:Health]</td>
+<td align="right">0.11</td>
+<td align="right">0.01</td>
+<td align="right">0.27</td>
+<td align="right">-0.38</td>
+<td align="right">-0.12</td>
+<td align="right">0.01</td>
+<td align="right">0.10</td>
+<td align="right">0.20</td>
+<td align="right">0.33</td>
+<td align="right">0.71</td>
+<td align="right">1202.74</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) Major_Category:_NEW_Major_Category]</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.47</td>
+<td align="right">-0.92</td>
+<td align="right">-0.42</td>
+<td align="right">-0.18</td>
+<td align="right">0.00</td>
+<td align="right">0.16</td>
+<td align="right">0.40</td>
+<td align="right">0.93</td>
+<td align="right">3367.31</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[(Intercept) state:NY]</td>
+<td align="right">0.06</td>
+<td align="right">0.01</td>
+<td align="right">0.38</td>
+<td align="right">-0.72</td>
+<td align="right">-0.21</td>
+<td align="right">-0.02</td>
+<td align="right">0.06</td>
+<td align="right">0.16</td>
+<td align="right">0.34</td>
+<td align="right">0.83</td>
+<td align="right">1285.23</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) state:TX]</td>
+<td align="right">-0.05</td>
+<td align="right">0.01</td>
+<td align="right">0.38</td>
+<td align="right">-0.84</td>
+<td align="right">-0.32</td>
+<td align="right">-0.13</td>
+<td align="right">-0.05</td>
+<td align="right">0.04</td>
+<td align="right">0.23</td>
+<td align="right">0.72</td>
+<td align="right">1284.40</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[(Intercept) state:_NEW_state]</td>
+<td align="right">-0.01</td>
+<td align="right">0.01</td>
+<td align="right">0.57</td>
+<td align="right">-1.12</td>
+<td align="right">-0.42</td>
+<td align="right">-0.13</td>
+<td align="right">0.00</td>
+<td align="right">0.13</td>
+<td align="right">0.39</td>
+<td align="right">1.06</td>
+<td align="right">3583.15</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) sex:female]</td>
+<td align="right">0.07</td>
+<td align="right">0.00</td>
+<td align="right">0.17</td>
+<td align="right">-0.21</td>
+<td align="right">-0.06</td>
+<td align="right">-0.01</td>
+<td align="right">0.04</td>
+<td align="right">0.13</td>
+<td align="right">0.25</td>
+<td align="right">0.47</td>
+<td align="right">1371.92</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[AGEP sex:female]</td>
+<td align="right">0.02</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.01</td>
+<td align="right">0.01</td>
+<td align="right">0.02</td>
+<td align="right">0.02</td>
+<td align="right">0.02</td>
+<td align="right">0.02</td>
+<td align="right">3180.43</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) sex:male]</td>
+<td align="right">-0.08</td>
+<td align="right">0.00</td>
+<td align="right">0.17</td>
+<td align="right">-0.49</td>
+<td align="right">-0.28</td>
+<td align="right">-0.15</td>
+<td align="right">-0.05</td>
+<td align="right">0.00</td>
+<td align="right">0.05</td>
+<td align="right">0.21</td>
+<td align="right">1613.56</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[AGEP sex:male]</td>
+<td align="right">0.03</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.02</td>
+<td align="right">0.03</td>
+<td align="right">0.03</td>
+<td align="right">0.03</td>
+<td align="right">0.03</td>
+<td align="right">0.03</td>
+<td align="right">0.04</td>
+<td align="right">2011.61</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>b[(Intercept) sex:_NEW_sex]</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.28</td>
+<td align="right">-0.51</td>
+<td align="right">-0.20</td>
+<td align="right">-0.07</td>
+<td align="right">0.00</td>
+<td align="right">0.07</td>
+<td align="right">0.22</td>
+<td align="right">0.53</td>
+<td align="right">2672.37</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>b[AGEP sex:_NEW_sex]</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.10</td>
+<td align="right">-0.20</td>
+<td align="right">-0.08</td>
+<td align="right">-0.03</td>
+<td align="right">0.00</td>
+<td align="right">0.03</td>
+<td align="right">0.08</td>
+<td align="right">0.20</td>
+<td align="right">2675.74</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>sigma</td>
+<td align="right">0.93</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.91</td>
+<td align="right">0.92</td>
+<td align="right">0.93</td>
+<td align="right">0.93</td>
+<td align="right">0.94</td>
+<td align="right">0.94</td>
+<td align="right">0.95</td>
+<td align="right">4000.00</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>Sigma[Major_Category:(Intercept),(Intercept)]</td>
+<td align="right">0.24</td>
+<td align="right">0.02</td>
+<td align="right">0.68</td>
+<td align="right">0.01</td>
+<td align="right">0.02</td>
+<td align="right">0.03</td>
+<td align="right">0.06</td>
+<td align="right">0.17</td>
+<td align="right">0.49</td>
+<td align="right">1.69</td>
+<td align="right">1709.67</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>Sigma[state:(Intercept),(Intercept)]</td>
+<td align="right">0.34</td>
+<td align="right">0.03</td>
+<td align="right">1.07</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.05</td>
+<td align="right">0.20</td>
+<td align="right">0.80</td>
+<td align="right">2.57</td>
+<td align="right">1502.46</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>Sigma[sex:(Intercept),(Intercept)]</td>
+<td align="right">0.08</td>
+<td align="right">0.01</td>
+<td align="right">0.31</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.02</td>
+<td align="right">0.06</td>
+<td align="right">0.16</td>
+<td align="right">0.49</td>
+<td align="right">2512.64</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>Sigma[sex:AGEP,(Intercept)]</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.03</td>
+<td align="right">-0.05</td>
+<td align="right">-0.01</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.04</td>
+<td align="right">1279.13</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>Sigma[sex:AGEP,AGEP]</td>
+<td align="right">0.01</td>
+<td align="right">0.00</td>
+<td align="right">0.02</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.02</td>
+<td align="right">0.07</td>
+<td align="right">1305.58</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td>mean_PPD</td>
+<td align="right">10.87</td>
+<td align="right">0.00</td>
+<td align="right">0.02</td>
+<td align="right">10.83</td>
+<td align="right">10.85</td>
+<td align="right">10.86</td>
+<td align="right">10.87</td>
+<td align="right">10.88</td>
+<td align="right">10.89</td>
+<td align="right">10.91</td>
+<td align="right">3925.80</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td>log-posterior</td>
+<td align="right">-6775.89</td>
+<td align="right">0.12</td>
+<td align="right">3.78</td>
+<td align="right">-6783.88</td>
+<td align="right">-6780.79</td>
+<td align="right">-6778.33</td>
+<td align="right">-6775.70</td>
+<td align="right">-6773.27</td>
+<td align="right">-6771.17</td>
+<td align="right">-6769.29</td>
+<td align="right">970.00</td>
+<td align="right">1</td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 

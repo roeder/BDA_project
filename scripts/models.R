@@ -66,14 +66,14 @@ data_intervals_mean %>%
   ylab("wages in USD") +
   facet_grid(state ~ Major_Category)
 
-data_intervals_median %>% 
-  ggplot(., aes(x = AGEP)) +
-  geom_line(aes(y = median, colour = sex)) +
-  geom_line(aes(y = q_upper, colour = sex), linetype = "dashed") +
-  ggtitle("Real data: wages (median + quantile)") +
-  xlab("age") +
-  ylab("wages in USD") +
-  facet_grid(state ~ Major_Category)
+# data_intervals_median %>% 
+#   ggplot(., aes(x = AGEP)) +
+#   geom_line(aes(y = median, colour = sex)) +
+#   geom_line(aes(y = q_upper, colour = sex), linetype = "dashed") +
+#   ggtitle("Real data: wages (median + quantile)") +
+#   xlab("age") +
+#   ylab("wages in USD") +
+#   facet_grid(state ~ Major_Category)
 
 lin_df <- model_df1 %>% 
   filter(AGEP >= 25,
@@ -86,15 +86,6 @@ set.seed(42)
 prototype_lin_df <- lin_df %>% 
   sample_n(size = 5000)
 
-# prototype_lin_tx <- lin_df %>% # TX in those three categories has 52708 entries
-#   filter(state == "TX") %>% 
-#   sample_n(size = 3000) 
-#   
-# prototype_lin_ny <- lin_df %>% # NY in those three categories has 46058 entries
-#   filter(state == "NY") %>% 
-#   sample_n(size = 3000) 
-
-
 post_sample_grid <- expand.grid(AGEP = 25:50, 
                                 sex = c("male", "female"), 
                                 Major_Category = c("Education", "Health", "Business"), 
@@ -103,13 +94,15 @@ post_sample_grid <- expand.grid(AGEP = 25:50,
                                 stringsAsFactors = F)
 
 ### Sexpipe2 ---------
-log_sexpipe2 <- stan_glmer(log_wage ~ (AGEP | sex) + (1 | Major_Category) + (1 | state),
+lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + (1 | Major_Category) + (1 | state),
                            data = prototype_lin_df, family = gaussian())
 
-log_post_sexpipe2 <- posterior_predict(log_sexpipe2, post_sample_grid)
-exp_post_sexpipe2 <- exp(log_post_sexpipe2)
+# save(lin_fit, file = "data/lin42.RData")
 
-post_df <- bind_cols(post_sample_grid, as.data.frame(t(exp_post_sexpipe2)))
+log_post_lin <- posterior_predict(lin_fit, post_sample_grid)
+exp_post_lin <- exp(log_post_lin)
+
+post_df <- bind_cols(post_sample_grid, as.data.frame(t(exp_post_lin)))
 
 post_long <- post_df %>% 
   gather(key = "sample_no", value = "predicted_earning", V1:V4000)
@@ -169,11 +162,11 @@ ci_ratio %>%
   facet_grid(state ~ Major_Category) 
 
 # Leave one out cross-validation
-link_log_sexpipe2 <- rstanarm::log_lik(log_sexpipe2)
-loo_log_sexpipe2 <- rstanarm::loo(link_log_sexpipe2)
-kplot(loo_log_sexpipe2)
+link_log_lin <- rstanarm::log_lik(log_lin)
+loo_log_lin <- rstanarm::loo(link_log_lin)
+kplot(loo_log_lin)
 
-plot(log_sexpipe2, plotfun = "trace", 
+plot(lin_fit, plotfun = "trace", 
      # pars = c("(Intercept)",  "AGEP", "Major_CategoryEducation", "Major_CategoryHealth", "sigma"), 
      inc_warmup = FALSE)
 
