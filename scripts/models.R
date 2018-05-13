@@ -82,6 +82,7 @@ lin_df <- model_df1 %>%
 prototype_spline_df <- model_df1 %>%
   sample_n(size = 5000)
 
+set.seed(42)
 prototype_lin_df <- lin_df %>% 
   sample_n(size = 5000)
 

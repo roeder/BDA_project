@@ -103,7 +103,15 @@ While the gender wage gap has shrunk in the US and other developed countries ove
 Along similar lines, a recent study of historical labour data has questioned the notion that some of the gender wage gap can still be attributed to gender differences in education [^3]. 
 In the study, Blau and Kahn show that while in 1980 approximately 21.1% of the wage gap could be explained by work experience and 2.6% by educational level, by 2010 those numbers have decreased to 14.1% and -5.9% respectively, indicating that education is not a factor at all -- if anything, women nowadays earn too little compared to their educational level.
 
-While we cannot claim that the presented work provides substantial answers to the unsolved questions surrounding the gender wage gap, we hope that our project report is still an informative and enjoyable read.
+Coming back to this project, it should be said that our scope is a lot smaller compared to these studies.
+We have not even attempted to disentangle the possible mechanisms underlying the wage gap.
+
+Instead, our approach is rather descriptive:
+we set out to investigate wage as a function of people's age and how this association may affect the gender wage gap -- does the gap grow or shrink when looking at different age cohorts? 
+Is such an effect equally strong across different fields of work and different states or are wages consistently more equal in some of these groups ?
+These are questions we would like to approach by applying the Bayesian workflow presented in the course.
+
+While we cannot claim that the presented work provides groundbreaking answers to any unsolved research questions surrounding the gender wage gap, we hope that our report is still an informative and enjoyable read.
 
 # Data
 
