@@ -10,16 +10,82 @@ output:
 
 ```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE, 
-                      results = "hide", 
                       warning = FALSE, 
-                      message = FALSE,
-                      fig.align = "center")
+                      message = FALSE)
 
 library(tufte)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+
+custom_ggtheme <- theme_light() +
+  theme(plot.background =
+          element_rect(fill = "#fffff8",
+                       colour = "#fffff8",
+                       size = 0.5,
+                       linetype = "solid"),
+        panel.background =
+          element_rect(fill = "#fffff8",
+                       colour = "#fffff8",
+                       size = 0.5,
+                       linetype = "solid"),
+        legend.box.background =
+          element_rect(fill = "#fffff8",
+                       colour = "#fffff8",
+                       linetype = "solid"),
+        legend.background = element_rect(fill = "#fffff8",
+                                        colour = "#fffff8",
+                                        linetype = "solid"),
+        legend.key = element_rect(fill = "#fffff8",
+                                        colour = "#fffff8",
+                                        linetype = "solid"),
+        legend.position = "bottom")
+
+# ggtheme_tufte <- function() {
+#   theme(plot.background =
+#           element_rect(fill = "#fffff8",
+#                        colour = "#fffff8",
+#                        size = 0.5,
+#                        linetype = "solid"),
+#         plot.margin=unit(c(1, 1, 0.5, 0.5), "lines"),
+#         panel.background =
+#           element_rect(fill = "#fffff8",
+#                        colour = "#fffff8",
+#                        size = 0.5,
+#                        linetype = "solid"),
+#         panel.grid.major = element_line(colour = "white", size = 1, linetype="dashed"),
+#           # blank(),
+#         panel.grid.minor = element_blank(),
+#         legend.box.background =
+#           element_rect(fill = "#fffff8",
+#                        colour = "#fffff8",
+#                        linetype = "solid"),
+#         axis.ticks = element_blank(),
+#         axis.text = element_text(family = "Palatino", size = 16),
+#         axis.title.x = element_text(family = "Palatino", size = 20,
+#                                     margin = margin(t = 15, r = 0, b = 0, l = 0)),
+#         axis.title.y = element_text(family = "Palatino", size = 18,
+#                                     margin = margin(t = 0, r = 15, b = 0, l = 0)),
+#         strip.background = element_rect(fill = "#fffff8",
+#                                         colour = "#fffff8",
+#                                         linetype = "solid"),
+#         strip.text = element_text(family = "Palatino", size = 16),
+#         legend.text = element_text(family = "Palatino", size = 16),
+#         legend.title = element_text(family = "Palatino", size = 16,
+#                                     margin = margin(b = 5)),
+#         legend.background = element_rect(fill = "#fffff8",
+#                                         colour = "#fffff8",
+#                                         linetype = "solid"),
+#         legend.key = element_rect(fill = "#fffff8",
+#                                         colour = "#fffff8",
+#                                         linetype = "solid")
+#   )
+# }
 ```
 
-## Introduction
-In this project we apply the Bayesian workflow to US census data from the years 2012 to 2016 in order to model wages and gender wage differences across several academic fields. 
+# Introduction
+In this project we apply the Bayesian workflow to US census data from the years 2012 to 2016 in order to model wages and gender wage differences for college graduates from three academic fields living in New York state and Texas. 
 
 The gender wage gap, i.e. the average difference in pay between men and women, 
 continues to be a subject of great debate in academia, media, politics as well as in more informal settings.
@@ -39,10 +105,134 @@ In the study, Blau and Kahn show that while in 1980 approximately 21.1% of the w
 
 While we cannot claim that the presented work provides substantial answers to the unsolved questions surrounding the gender wage gap, we hope that our project report is still an informative and enjoyable read.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot. It really was
+# Data
+
+## From raw data to start of analysis
+The data sources as well as some preliminary data cleaning steps are inspired by a *FiveThirtyEight* article from 2014: [*The Economic Guide To Picking A College Major*
+](https://fivethirtyeight.com/features/the-economic-guide-to-picking-a-college-major/).
+
+Our primary data source is the American Community Survey (ACS) Public Use Microdata Sample (PUMS) conducted by the United States Census Bureau.
+The ACS conducts surveys of around 3.5 million households each year.
+
+We are using the multiyear PUMS file covering census data for the years 2012 to 2016, which contains records on ~16 million individual residents.
+It can be downloaded as `zip` file by selecting "United States Population Records" from [this website](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_pums_csv_2012_2016&prodType=document). 
+The `zip` file contains four large `csv` files which together cover the complete dataset.
+Additional information on the PUMS files is provided on the US Census Bureau's website: they provide a general overview ([link to PDF](https://www.census.gov/content/dam/Census/programs-surveys/acs/guidance/training-presentations/20180214_PUMS.pdf)) as well as a data dictionary ([link to PDF](https://www2.census.gov/programs-surveys/acs/tech_docs/pums/data_dict/PUMS_Data_Dictionary_2012-2016.pdf)). 
+
+In the first data cleaning step, we remove individuals who did not graduate college (see R script [here](https://github.com/roeder/BDA_project/blob/master/scripts/clean_raw_csv.R)) and write the remaining 3,489,070 entries to a file called `us16_filtered.csv`. 
+
+Next up, we add information about college majors by merging our dataset with a lookup file called `majors-list.csv` prepared by *FiveThirtyEight* ([GitHub link](https://github.com/fivethirtyeight/data/blob/master/college-majors/majors-list.csv)).
+This lookup file matches the `FOD1P` codes used in the PUMS to actual names of the corresponding college majors.
+Additionally, these college majors are grouped into categories as used in a major 2011 study [^4].
+
+You can find the R script we used to merge datasets [on GitHub](https://github.com/roeder/BDA_project/blob/master/scripts/aggregate_us_16.R).
+This script also converts all wages reported before 2016 to inflation-adjusted wages equivalent to 2016 dollars, before writing selected columns for the 3,489,070 entries to a file called `selected_vars.csv`.
+
+## Selecting the data subset
+The file `selected_vars.csv` is the starting point for our actual analysis:
+```{r starting_csv, cache=TRUE}
+library(readr)
+selected_vars <- read_csv("data/selected_vars.csv")
+selected_vars
+```
+
+It contains nine variables:
+
+* `SERIALNO`: ID number for each entry
+* `ST`: two-digit code for US states
+* `AGEP`: age of survey respondent (at time of answering)
+* `SEX`: survey respondent's gender
+* `FOD1P`: four-digit code for college major
+* `Major`: corresponding college major (173 majors in total)
+* `Major_Category`: college major category (16 categories in total)
+* `real_total_earn`: inflation-adjusted reported yearly total earnings (in 2016 USD)
+* `real_wage`: inflation-adjusted reported yearly wages (in 2016 USD)
+
+While it would of course be most appropriate to conduct an analysis on the complete dataset, we chose to focus only on a select subset of entries in order to keep both computation times and model interpretation manageable.
+Our chosen subset consists of entries from two states and three major categories.
+
+We choose New York and Texas as two similarly large states which should serve as decent stand-ins for politically opposed *blue states* (NY) and *red states* (TX).
+The major categories we focus on are business, education and health.
+We select the data subset with the following R code:
+```{r select_subset, cache=TRUE}
+library(dplyr)
+nytx_df <- selected_vars %>% 
+  filter(ST %in% c(36, 48),
+         Major_Category %in% c("Education", "Health", "Business"),
+         real_wage > 0) %>% 
+  mutate(state = if_else(ST == 36, "NY", "TX"),
+         sex = if_else(SEX == 1, "male", "female"))
+```
+
+Note that in the above code chunk, we also remove respondents who reported no wage and recode `ST` and `SEX` into the more explicit variables `state` and `sex`.
+
+The resulting subset contains 148,490 entries, which can be broken down as follows:
+```{r nytx_nos, results='asis'}
+library(tidyr)
+nytx_df %>% 
+  group_by(Major_Category, state, sex) %>% 
+  summarise(entries = n()) %>% 
+  spread(key = "sex", value = "entries") %>% 
+  mutate(ratio = female / male,
+         total = male + female) %>% 
+  knitr::kable(., digits = 2, format.args = list(big.mark = ","),
+               col.names = c("major category", "state", "female", "male",
+                             "ratio (f/m)", "total"))
+```
+
+We can see that both total number and gender ratio of entries for the two states are roughly comparable across the three major categories.
+
+## Data summaries
+In order to get an overview of the general trend in wages as a function of age, we plot the mean and variation of yearly wages across the age range from 20 to 70:
+```{r data_time_plot, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5}
+library(ggplot2)
+nytx_df %>% 
+  filter(AGEP >= 20,
+         AGEP <= 70) %>% 
+  group_by(AGEP, sex, Major_Category, state) %>% 
+  summarise(mean_wage = mean(real_wage, na.rm = T),
+            sd_wage = sd(real_wage, na.rm = T)) %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = mean_wage, colour = sex)) +
+  geom_line(aes(y = mean_wage + 2 * sd_wage, colour = sex), linetype = "dashed") +
+  ggtitle("Data summary: yearly wages (mean + 2 standard deviations)") +
+  xlab("age") +
+  ylab("yearly wages in USD") +
+  facet_grid(state ~ Major_Category) +
+  custom_ggtheme
+```
+
+We can see differences in wages as well as in the gender wage gap when comapring the different panels.
+On a more technical note, we can also see that there is a lot of variation in the wages within each age cohort.
+This is not unexpected, however it has implications for our model choice: 
+If we were to go ahead and use a regression model that directly models wage (with Gaussian noise) as a function of age, it is very likely that we would end up with negative wages when drawing posterior predictive samples from that model.
+
+In order to avoid this, we log-transform the wage numbers before running our models.
+This will ensure that our posterior predictive samples are positive (after exponentiating them) -- and has the convenient side-effect of lowering the impact of high outlier wages.
+```{r log_transform}
+model_df1 <- nytx_df %>% 
+  mutate(log_wage = log(real_wage))
+```
+
+While using a Gaussian distribution to describe the wage distribution at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages.
+We can see this in the violin plots of select age cohorts:
+```{r violins, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5}
+model_df1 %>% 
+  filter(AGEP %in% seq(25, 60, 5)) %>% 
+  ggplot(., aes(x = factor(AGEP), y = log_wage)) +
+  geom_violin() +
+  ggtitle("Data summary: log-transformed yearly wages in eight age cohorts") +
+  xlab("age") +
+  ylab("log-transformed yearly wages") +
+  facet_grid(state ~ Major_Category) +
+  custom_ggtheme
+```
+
 
 [^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
 
 [^2]: Heathcote, Jonathan, Kjetil Storesletten, and Giovanni L. Violante. "The macroeconomic implications of rising wage inequality in the United States." Journal of political economy 118.4 (2010): 681-722.
 
 [^3]: Blau, Francine D., and Lawrence M. Kahn. "The gender wage gap: Extent, trends, and explanations." Journal of Economic Literature 55.3 (2017): 789-865.
+
+[^4]: Carnevale et al., "What's It Worth?: The Economic Value of College Majors." Georgetown University Center on Education and the Workforce, 2011. [Website](http://cew.georgetown.edu/whatsitworth)

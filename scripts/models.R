@@ -2,9 +2,9 @@ library(readr)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(stringr)
 library(rstan)
 library(rstanarm)
-library(stringr)
 
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores() - 1)
@@ -21,19 +21,23 @@ selected_vars <- read_csv("data/selected_vars.csv")
 
 nytx_df <- selected_vars %>% 
   filter(ST %in% c(36, 48),
-         ! Major_Category == "Interdisciplinary") %>% 
+         Major_Category %in% c("Education", "Health", "Business"),
+         real_wage > 0) %>% 
   mutate(state = if_else(ST == 36, "NY", "TX"),
          sex = if_else(SEX == 1, "male", "female"))
 
+nytx_df %>% 
+  filter(AGEP %in% seq(25, 60, 5)) %>% 
+  ggplot(., aes(x = factor(AGEP), y = log(real_wage))) +
+  geom_violin() +
+  facet_grid(state ~ Major_Category)
+
 model_df1 <- nytx_df %>% 
-  filter(Major_Category %in% c("Education", "Health", "Business")) %>% 
-  filter(real_wage > 0) %>% 
-  mutate(log_earnings = log(real_total_earn),
-         log_wage = log(real_wage))
+  mutate(log_wage = log(real_wage))
 
 data_intervals_mean <- model_df1 %>% 
   filter(AGEP >= 20,
-         AGEP <= 75) %>% 
+         AGEP <= 70) %>% 
   group_by(AGEP, sex, Major_Category, state) %>% 
   summarise(mean_wage = mean(real_wage, na.rm = T),
             sd_wage = sd(real_wage, na.rm = T),
@@ -46,7 +50,7 @@ data_intervals_mean <- model_df1 %>%
 
 data_intervals_median <- model_df1 %>% 
   filter(AGEP >= 20,
-         AGEP <= 75) %>% 
+         AGEP <= 70) %>% 
   group_by(AGEP, sex, Major_Category, state) %>% 
   summarise(median = median(real_wage, na.rm = T),
             q_upper = quantile(real_wage, 0.975, na.rm = T)) %>% 
@@ -62,10 +66,14 @@ data_intervals_mean %>%
   ylab("wages in USD") +
   facet_grid(state ~ Major_Category)
 
-cats_nytx <- model_df1 %>% 
-  group_by(Major_Category, state, sex) %>% 
-  summarise(entries = n()) %>% 
-  spread(key = "sex", value = "entries")
+data_intervals_median %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median, colour = sex)) +
+  geom_line(aes(y = q_upper, colour = sex), linetype = "dashed") +
+  ggtitle("Real data: wages (median + quantile)") +
+  xlab("age") +
+  ylab("wages in USD") +
+  facet_grid(state ~ Major_Category)
 
 lin_df <- model_df1 %>% 
   filter(AGEP >= 25,
