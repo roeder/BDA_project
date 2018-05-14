@@ -168,11 +168,15 @@ plot(lin_fit, plotfun = "trace",
 mcmc_trace(as.array(lin_fit), np = nuts_params(lin_fit))
 
 ### GAMM ---------
-log_GAMM <- stan_gamm4(log_earnings ~ s(AGEP), 
-                       random = ~(sex | Major_Category) + (sex | state), 
-                       data = prototype_spline_df, family = gaussian(),
-                       prior_intercept = NULL,
-                       prior_smooth = NULL)
+set.seed(42)
+prototype_spline_df <- model_df1 %>%
+  sample_n(size = 5000)
+
+log_GAMM <- stan_gamm4(log_wage ~ s(AGEP), 
+                       random = ~(sex | Major_Category) + (sex | state),
+                       prior_intercept = NULL, 
+                       data = prototype_spline_df,
+                       family = gaussian())
 
 GAMM_sample_grid <- expand.grid(AGEP = 20:75, 
                                 sex = c("male", "female"), 
@@ -265,13 +269,8 @@ log_sexpipe3 <- stan_glmer(log_earnings ~ (AGEP | sex) + (1 | Major_Category) + 
                            data = prototype_lin_df, family = gaussian())
 
 
-# agg_nytx_df <- nytx_df %>% 
-#   group_by(Major_Category, state, sex, AGEP) %>% 
-#   summarise(mean_total_earning = mean(real_total_earn, na.rm = T),
-#             mean_wage = mean(real_wage, na.rm = T),
-#             sd_total_earning = sd(real_total_earn, na.rm = T),
-#             entries = n()) %>% 
-#   ungroup() %>% 
-#   mutate(sem = sd_total_earning / sqrt(entries)) %>% 
-#   filter(AGEP >= 25,
-#          AGEP <= 70)
+ggplot(aes(AGEP, log_wage), data = prototype_spline_df) + 
+  geom_point() + 
+  geom_smooth(method = lm, formula = y ~ splines::bs(x, 9), se = FALSE)
+
+plot_nonlinear(log_GAMM, facet_args = list(facets = ~ Major_Category + state))

@@ -205,6 +205,7 @@ We can see that both total number and gender ratio of entries for the two states
 
 ## Data summaries
 In order to get an overview of the general trend in wages as a function of age, we plot the mean and variation of yearly wages across the age range from 20 to 70:
+
 ```{r data_time_plot, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 library(ggplot2)
 theme_set(custom_ggtheme)
@@ -246,6 +247,7 @@ model_df1 <- nytx_df %>%
 
 While using Gaussian distributions to describe the wage distributions at each age point is of course still an approximation, it is not a terribly outrageous one after log-transforming the wages.
 We can see this in the violin plots of select age cohorts (we only show eight because it would start to get cramped with more age cohorts):
+
 ```{r violins, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 model_df1 %>% 
   filter(AGEP %in% seq(25, 60, 5)) %>% 
@@ -270,7 +272,7 @@ lin_df <- model_df1 %>%
 The resulting data frame `lin_df` still contains 85,843 entries.
 In order to keep computation times manageable, we reduce the size of the dataset by taking a random sample of 5,000 entries:
 ```{r sample_lin}
-set.seed(4242)
+set.seed(42)
 prototype_lin_df <- lin_df %>% 
   sample_n(size = 5000)
 ```
@@ -281,7 +283,7 @@ Log-transformed wages will be fitted as a linear function of age with Gaussian n
 We want to allow for the slope of this function to be different between the genders, so we add `sex` as a grouping term.
 In addition, we specify the hierarchical groupings `Major_Category` and `state`.
 
-Sampling takes place with `rstanarm`'s default settings: four chains with 4,000 samples, 2,000 of which are warmup samples.
+Sampling takes place with `rstanarm`'s default settings: four chains with 2,000 samples, 1,000 of which are warmup samples.
 Default priors are `N(0, 2.5)` for regression coefficients, `N(0, 10)` for intercepts and `exponential(1)` for `sigma` parameters of the Gaussian noise.
 Note that the prior parameters apply after the regression's predictors are centered.
 ```{r load_stan}
@@ -291,11 +293,11 @@ library(rstanarm)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores() - 1)
 ```
-```{r fit_lin_model, eval=FALSE}
+```{r fit_lin_model, eval=FALSE, echo=TRUE}
 lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + 
                         (1 | Major_Category) + (1 | state),
                       data = prototype_lin_df, family = gaussian(), 
-                      adapt_delta = 0.99)
+                      adapt_delta = 0.98)
 ```
 ```{r load_lin_model, echo=FALSE}
 load("data/lin42_98.RData")
@@ -307,7 +309,7 @@ knitr::kable(lin_fit$stan_summary, digits = 2)
 ```
 
 All `Rhat` values are below 1.1, giving an indication that the chains have converged.
-We can also asses convergence by inspecting the trace plots of the sampling chains:
+We can also asses convergence by inspecting the trace plots of the sampling chains (the 1000 samples after warm-up are shown):
 ```{r load_bayesplot}
 library(bayesplot)
 theme_set(custom_ggtheme)
@@ -317,7 +319,10 @@ theme_set(custom_ggtheme)
 mcmc_trace(as.array(lin_fit), np = nuts_params(lin_fit))
 ```
 
-DIVERGENCES? (Tried to increase delta more and more. no dice so far)
+While the chains are mostly mixed and stationary, there is a noticeable amount of divergences.
+We have followed the recommendation of increasing the parameter provided via `adapt_delta` closer to 1 (default is 0.95).
+This has reduced, but not eliminated the divergent transitions.
+In summary, the number of divergent transitions is something we take note of, but have to accept for now.
 
 ## Predictive performance: PSIS-LOO
 We can use *Pareto smoothed importance sampling* (PSIS) *leave-one-out* (LOO) *cross-validation* (CV) to assess the predictive performance of the linear model. 
@@ -332,10 +337,12 @@ plot(loo_lin)
 All *k* values are below 0.5, indicating quick convergence and solid predicite performance [^5].
 
 ## Posterior predictions
-With the linear model fitted, we can now draw posterior predictive samples to answer some of our questions around wages and the gender wage gap.
+With the linear model fitted, we can now draw (4000) posterior predictive samples to answer some of our questions around wages and the gender wage gap.
+
 
 First, let's have a look at the predicted wages. 
 We show the median and central 95% interval for wages in each age cohort:
+
 ```{r lin_post_wages, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 post_sample_grid <- expand.grid(AGEP = 25:50, 
                                 sex = c("male", "female"), 
@@ -378,6 +385,7 @@ In order to show the context of real data more explicitly, we can plot the predi
 Note that his time around, we plot the data median and the 90% quantile at each age point (instead of mean & two standard deviations earlier).
 Due to high wages being masked in our original dataset, the real data's 97.5% wage quantiles look pretty peculiar (they form a horizontal line across all ages).
 As a consequence, the real data may look different in this plot compared to the earlier one.
+
 ```{r real_v_lin, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 data_intervals_median <- model_df1 %>% 
   filter(AGEP >= 20,
@@ -406,6 +414,7 @@ This is especially prominent in the education and health cohorts -- it seems lik
 
 Now that we have posterior samples, we can use them to investigate some specific aspects of the wage data by deriving quantities from the posterior sample.
 One such derivation is to calculate the difference of predicted yearly wages for men and women in each panel.
+
 ```{r lin_diff, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 ci_diff<- post_long %>% 
   spread(key = "sex", value = "predicted_earning") %>% 
@@ -432,6 +441,7 @@ However, as we have alluded to earlier, this might be entirely due to the fact t
 We can see if that is the case by investigating the wage ratio instead of the difference.
 This gives us a relative measure instead of an absolute one.
 A ratio like this is best visualised on the `log2` scale:
+
 ```{r lin_ratio, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 ci_ratio <- post_long %>% 
   spread(key = "sex", value = "predicted_earning") %>% 
@@ -455,7 +465,7 @@ ci_ratio %>%
 Unfortunately (in terms of interesting outcomes), it does not seem like we can identify any group differences in the relative gender wage gap trend with this linear model:
 the slope and location of the time series are practically identical across all six panels.
 
-As unexciting as it may be, this happenstance makes it easier to provide a summary of the predicted wage ratios for workers of different ages by simply taking the mean across all six panels:
+As unexciting as it may be, this happenstance actually makes it easier to provide a summary of the predicted wage ratios for workers of different ages by simply taking the mean across all six panels:
 ```{r lin_ratio_table, results='asis'}
 ci_ratio %>% 
   filter(AGEP %in% seq(26, 50, 3)) %>% 
@@ -471,8 +481,176 @@ ci_ratio %>%
 
 This table shows the trends shown from the previous figure on a more tangible scale than the logarithmic scale: as men's relative wages grow larger with age, the credibility intervals of wage ratios shift accordingly.
 
-# Additive mixed model: complexity ramps up
+# Additive mixed model: ramped up complexity
+The linear model above is a fairly simple first approach to modelling our wage data.
+With the next model in this report, we increase the complexity substantially (arguably too much so).
 
+The model is a hierarchical *generalised additive mixed model* (GAMM) that also uses the cubic B-spline basis function, which models the predictor (log-transformed wages) as a piecewise continuous function conditioned on a set of knot points (see BDA3 book [^6], chapter 20, pages 487-489 for more details).
+
+## Model fitting & convergence diagnostics
+We fit the GAMM using the `rstanarm` function `stan_gamm4()`, using the following priors: `N(0, 2.5)` for regression coefficients, flat uniform for intercepts and `exponential(1)` for the smooth function.
+
+Since this model should be able to pick up more trends than just linear growth during the relatively younger ages, we use a random sample (5000 entries) from the complete dataset to fit it.
+
+```{r fit_gamm_model, eval=FALSE, echo=TRUE}
+set.seed(42)
+prototype_spline_df <- model_df1 %>%
+  sample_n(size = 5000)
+
+log_GAMM <- stan_gamm4(log_wage ~ s(AGEP), 
+                       random = ~(sex | Major_Category) + (sex | state),
+                       prior_intercept = NULL, 
+                       data = prototype_spline_df,
+                       family = gaussian())
+```
+```{r load_gamm_model, echo=FALSE}
+load("data/log_GAMM_TR.RData")
+```
+
+Again, let's have a look at parameter estimates and convergence diagnostics:
+```{r gamm_summary, results='asis'}
+knitr::kable(log_GAMM$stan_summary, digits = 2)
+```
+
+Just as with the linear model, all `Rhat` values are below 1.1.
+This diagnostic indicates that the chains have converged.
+
+Once again, we also inspect the trace plots of the sampling chains:
+
+```{r gamm_trace_plot, cache=TRUE, fig.fullwidth=TRUE, fig.width=10, fig.height=8}
+mcmc_trace(as.array(log_GAMM), np = nuts_params(log_GAMM))
+```
+
+Compared to the linear model, there are fewer divergent transitions (15), but of course it would be preferrable to see even fewer of them.
+
+## Predictive performance: PSIS-LOO
+While the number of divergent transitions has improved from the linear model, PSIS-LOO diagnostics are quite bad with the GAMM model:
+
+```{r gamm_kplot, cache=TRUE}
+loo_GAMM <- loo(log_lik(log_GAMM))
+par(bg = '#fffff8')
+plot(loo_GAMM)
+```
+
+```{r gamm_ktable, results='asis'}
+cbind(c("good", "ok", "bad", "very bad"), loo::pareto_k_table(loo_GAMM)) %>% 
+  knitr::kable(.)
+```
+
+Around 54% of the Pareto *k* values are bad or very bad, indicating either that the GAMM fit is poor or the model too complex. 
+While there are endless options for modifying the model looking for an improvement, the few we have tried (flat priors for intercept and smooth function) did not improve the model fit.
+
+## Posterior predictions
+Even though the PSIS-LOO diagnostic indicates a poor fit, we will power through for now.
+This means that we again draw (4000) posterior predictive samples from the fitted model.
+
+The first thing we investigate are the central 95% intervals for the predicted wages:
+
+```{r gamm_post_wages, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+GAMM_sample_grid <- expand.grid(AGEP = 20:70, 
+                                sex = c("male", "female"), 
+                                Major_Category = c("Education", "Health", "Business"), 
+                                state = c("NY", "TX"),
+                                KEEP.OUT.ATTRS = F,
+                                stringsAsFactors = F)
+
+log_post_GAMM <- posterior_predict(log_GAMM, GAMM_sample_grid, seed = 42)
+exp_post_GAMM <- exp(log_post_GAMM)
+
+post_GAMM_df <- bind_cols(GAMM_sample_grid, as.data.frame(t(exp_post_GAMM)))
+
+post_GAMM_long <- post_GAMM_df %>% 
+  gather(key = "sample_no", value = "predicted_earning", V1:V4000)
+
+ci_post_GAMM_pred <- post_GAMM_long %>% 
+  group_by(AGEP, sex, Major_Category, state) %>% 
+  summarise(q_lower = quantile(predicted_earning, 0.025, names = F),
+            median = quantile(predicted_earning, 0.5, names = F),
+            q_upper = quantile(predicted_earning, 0.975, names = F),
+            q90 = quantile(predicted_earning, 0.9, names = F)) %>% 
+  mutate(model = "GAMM")
+
+ci_post_GAMM_pred %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median, colour = sex)) +
+  geom_line(aes(y = q_lower, colour = sex), linetype = "dashed") +
+  geom_line(aes(y = q_upper, colour = sex), linetype = "dashed") +
+  ggtitle("Posterior prediction (GAMM): yearly wages (median & central 95% interval)") +
+  xlab("age") +
+  ylab("yearly wages in USD") +
+  facet_grid(state ~ Major_Category)
+```
+
+It appears that the GAMM has picked up the different earning potentials of the three major categories -- business and health are highest, with education trailing behind.
+
+While women's predicted wages are consistently lower then men's, the shape of the two curves does not dramatically differ.
+At most, we could say that the wage curve for women is a bit flatter than the one for men.
+
+We can also once again show the predicted wages in the context of the real data:
+```{r real_v_gamm, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+bind_rows(ci_post_GAMM_pred, data_intervals_median) %>% 
+  mutate(plot_cat = paste0(str_sub(sex, 1, 1), " (", model, ")")) %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median, colour = plot_cat)) +
+  geom_line(aes(y = q90, colour = plot_cat), linetype = "dashed") + 
+  scale_colour_manual(values = c("#e31a1c", "#fd8d3c", "#08306b", "#2171b5"),
+                      name = "group") +
+  ggtitle("Posterior prediction (GAMM) & real data: yearly wages (median & 90% quantile)") +
+  xlab("age") +
+  ylab("yearly wages in USD") +
+  facet_grid(state ~ Major_Category)
+```
+Across all panels, we observe the same problem that was present with the linear model:
+a predicted wage variation that is substantially higher than the one present in the real data.
+In addition, it seems like the GAMM is not able to pick up that real-world median wages don't seem to drop off for health graduates of older ages.
+Those things aside, we can say that at least the predicted median wages track real-world medians reasonably well.
+
+Just as we did when evaluating the linear model, we can use the posterior samples to describe the gender wage gap.
+We will skip showing the differences in absolute wages this time and go straight to the relative wage ratios:
+
+```{r gamm_ratio, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+ci_GAMM_ratio <- post_GAMM_long %>% 
+  spread(key = "sex", value = "predicted_earning") %>% 
+  mutate(ratio_mf = male / female) %>% 
+  group_by(AGEP, Major_Category, state) %>% 
+  summarise(q_lower = quantile(ratio_mf, 0.025, names = F),
+            median = quantile(ratio_mf, 0.5, names = F),
+            q_upper = quantile(ratio_mf, 0.975, names = F)) 
+
+ci_GAMM_ratio %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = log2(median))) +
+  geom_line(aes(y = log2(q_lower)), linetype = "dashed") +
+  geom_line(aes(y = log2(q_upper)), linetype = "dashed") +
+  ggtitle("Posterior prediction (GAMM): log2 ratio of wages (male / female; central 95% interval)") +
+  xlab("age") +
+  ylab("log2 ratio of yearly wages") +
+  facet_grid(state ~ Major_Category) 
+```
+
+While the linear model showed an increase in the wage gap toward higer ages, but no differences between the panels, we have the opposite problem with the GAMM:
+the time series lines are pretty much horizontal in all panels, their vertical position, however, differs when comparing the different major categories.
+
+Once again, we can make our observations from the ratio plot more explicit by summarising the interval boundaries and the median for specific groups.
+This time, we group by age as well as major category.
+These groupings show the situation off fairly well -- ratios within one major category are constant across all ages, but there are differences between the major categories:
+
+```{r gamm_ratio_table, results='asis'}
+ci_GAMM_ratio %>% 
+  filter(AGEP %in% c(25, 35, 45, 55)) %>% 
+  group_by(Major_Category, AGEP) %>% 
+  summarise(mean_lower = mean(q_lower),
+            mean_50 = mean(median),
+            mean_upper = mean(q_upper)) %>% 
+  mutate(mean_lower = paste0("female ", round(1 / mean_lower, 2), "x higher"),
+         mean_50 = paste0("male ", round(mean_50, 2), "x higher"),
+         mean_upper = paste0("male ", round(mean_upper, 2), "x higher")) %>% 
+  knitr::kable(., col.names = c("major category", "age", "2.5%", "50%", "97.5%"), 
+               align = "lrccc")
+```
+
+# Conclusions and thoughts
+and prayers
 
 
 [^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
@@ -484,3 +662,5 @@ This table shows the trends shown from the previous figure on a more tangible sc
 [^4]: Carnevale et al., "What's It Worth?: The Economic Value of College Majors." Georgetown University Center on Education and the Workforce, 2011. [Website](http://cew.georgetown.edu/whatsitworth)
 
 [^5]: Vehtari, Aki, Andrew Gelman, and Jonah Gabry. "Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC." Statistics and Computing 27.5 (2017): 1413-1432.
+
+[^6]: Gelman, A., Carlin, J.B., Stern, H. S., Dunson, D. B., Vehtari, A. and Rubin, D. B. Bayesian Data Analysis, Third Edition (Chapman & Hall/CRC Texts in Statistical Science).
