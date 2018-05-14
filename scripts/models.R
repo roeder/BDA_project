@@ -11,12 +11,6 @@ options(mc.cores = parallel::detectCores() - 1)
 
 theme_set(theme_light())
 
-kplot <- function(x) {
-  plot(x$pareto_k, pch = 3, col="blue", cex = 1.5, cex.lab=1.5, cex.axis = 1.3, xlab="Data point", ylab="Shape parameter k", ylim = c(min(x$pareto_k), max(x$pareto_k)+0.1))
-  abline(a = 0, b=0, col = "grey", lty = 3)
-  abline(a = 0.7, b=0, col = "red", lty = 4)
-}
-
 selected_vars <- read_csv("data/selected_vars.csv")
 
 nytx_df <- selected_vars %>% 
@@ -40,11 +34,9 @@ data_intervals_mean <- model_df1 %>%
          AGEP <= 70) %>% 
   group_by(AGEP, sex, Major_Category, state) %>% 
   summarise(mean_wage = mean(real_wage, na.rm = T),
-            sd_wage = sd(real_wage, na.rm = T),
-            entries = n()) %>% 
+            sd_wage = sd(real_wage, na.rm = T)) %>% 
   ungroup() %>% 
-  mutate(sem = sd_wage / sqrt(entries),
-         median = mean_wage * 1,
+  mutate(median = mean_wage * 1,
          q_upper = mean_wage + 2 * sd_wage,
          model = "data")
 
@@ -94,8 +86,10 @@ post_sample_grid <- expand.grid(AGEP = 25:50,
                                 stringsAsFactors = F)
 
 ### Sexpipe2 ---------
-lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + (1 | Major_Category) + (1 | state),
-                           data = prototype_lin_df, family = gaussian())
+lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + 
+                        (1 | Major_Category) + (1 | state),
+                      data = prototype_lin_df, family = gaussian(), 
+                      adapt_delta = 0.98)
 
 # save(lin_fit, file = "data/lin42.RData")
 
@@ -129,21 +123,23 @@ ci_post_pred %>%
   ylab("wages in USD") +
   facet_grid(state ~ Major_Category)
 
-ci_diff<- post_gender %>% 
-  group_by(AGEP, Major_Category, state) %>% 
+ci_diff<- post_long %>% 
+  spread(key = "sex", value = "predicted_earning") %>% 
+  mutate(diff_mf = male - female) %>%
+  group_by(AGEP, Major_Category, state) %>%
   summarise(q_lower = quantile(diff_mf, 0.025, names = F),
             median = quantile(diff_mf, 0.5, names = F),
             q_upper = quantile(diff_mf, 0.975, names = F))
 
-ci_diff %>% 
+ci_diff %>%
   ggplot(., aes(x = AGEP)) +
   geom_line(aes(y = median)) +
   geom_line(aes(y = q_lower), linetype = "dashed") +
   geom_line(aes(y = q_upper), linetype = "dashed") +
-  ggtitle("Posterior predictive 95% intervals: difference in wages (male - female)") +
+  ggtitle("Posterior prediction 95% intervals: difference in wages (male - female)") +
   xlab("age") +
-  ylab("difference in wages [USD]") +
-  facet_grid(state ~ Major_Category) 
+  ylab("difference in yearly wages [USD]") +
+  facet_grid(state ~ Major_Category)
 
 ci_ratio <- post_gender %>% 
   group_by(AGEP, Major_Category, state) %>% 
@@ -162,13 +158,14 @@ ci_ratio %>%
   facet_grid(state ~ Major_Category) 
 
 # Leave one out cross-validation
-link_log_lin <- rstanarm::log_lik(log_lin)
-loo_log_lin <- rstanarm::loo(link_log_lin)
-kplot(loo_log_lin)
+loo_lin <- loo(log_lik(lin_fit))
+kplot(loo_lin)
 
 plot(lin_fit, plotfun = "trace", 
      # pars = c("(Intercept)",  "AGEP", "Major_CategoryEducation", "Major_CategoryHealth", "sigma"), 
      inc_warmup = FALSE)
+
+mcmc_trace(as.array(lin_fit), np = nuts_params(lin_fit))
 
 ### GAMM ---------
 log_GAMM <- stan_gamm4(log_earnings ~ s(AGEP), 

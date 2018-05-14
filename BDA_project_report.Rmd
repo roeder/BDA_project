@@ -40,7 +40,9 @@ custom_ggtheme <- theme_light() +
         legend.key = element_rect(fill = "#fffff8",
                                         colour = "#fffff8",
                                         linetype = "solid"),
-        legend.position = "bottom")
+        legend.position = "bottom",
+        panel.grid.major = element_line(linetype = "dotted"),
+        panel.grid.minor = element_blank())
 
 # ggtheme_tufte <- function() {
 #   theme(plot.background =
@@ -205,6 +207,8 @@ We can see that both total number and gender ratio of entries for the two states
 In order to get an overview of the general trend in wages as a function of age, we plot the mean and variation of yearly wages across the age range from 20 to 70:
 ```{r data_time_plot, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
 library(ggplot2)
+theme_set(custom_ggtheme)
+
 nytx_df %>% 
   filter(AGEP >= 20,
          AGEP <= 70) %>% 
@@ -217,8 +221,7 @@ nytx_df %>%
   ggtitle("Data summary: yearly wages (mean + 2 standard deviations)") +
   xlab("age") +
   ylab("yearly wages in USD") +
-  facet_grid(state ~ Major_Category) +
-  custom_ggtheme
+  facet_grid(state ~ Major_Category)
 ```
 
 We can see differences in wages, slopes as well as in the gender wage gap when comparing the different panels.
@@ -251,8 +254,7 @@ model_df1 %>%
   ggtitle("Data summary: log-transformed yearly wages in eight age cohorts") +
   xlab("age") +
   ylab("log-transformed yearly wages") +
-  facet_grid(state ~ Major_Category) +
-  custom_ggtheme
+  facet_grid(state ~ Major_Category)
 ```
 
 # Linear model: a simple start
@@ -268,7 +270,7 @@ lin_df <- model_df1 %>%
 The resulting data frame `lin_df` still contains 85,843 entries.
 In order to keep computation times manageable, we reduce the size of the dataset by taking a random sample of 5,000 entries:
 ```{r sample_lin}
-set.seed(42)
+set.seed(4242)
 prototype_lin_df <- lin_df %>% 
   sample_n(size = 5000)
 ```
@@ -292,16 +294,185 @@ options(mc.cores = parallel::detectCores() - 1)
 ```{r fit_lin_model, eval=FALSE}
 lin_fit <- stan_glmer(log_wage ~ (AGEP | sex) + 
                         (1 | Major_Category) + (1 | state),
-                           data = prototype_lin_df, family = gaussian())
+                      data = prototype_lin_df, family = gaussian(), 
+                      adapt_delta = 0.99)
 ```
 ```{r load_lin_model, echo=FALSE}
-load("data/lin42.RData")
+load("data/lin42_98.RData")
 ```
 
 Let's have a look at the model fit summary, including parameter estimates and convergence diagnostics:
 ```{r lin_summary, results='asis'}
 knitr::kable(lin_fit$stan_summary, digits = 2)
 ```
+
+All `Rhat` values are below 1.1, giving an indication that the chains have converged.
+We can also asses convergence by inspecting the trace plots of the sampling chains:
+```{r load_bayesplot}
+library(bayesplot)
+theme_set(custom_ggtheme)
+```
+
+```{r lin_trace_plot, cache=TRUE, fig.fullwidth=TRUE, fig.width=10, fig.height=8}
+mcmc_trace(as.array(lin_fit), np = nuts_params(lin_fit))
+```
+
+DIVERGENCES? (Tried to increase delta more and more. no dice so far)
+
+## Predictive performance: PSIS-LOO
+We can use *Pareto smoothed importance sampling* (PSIS) *leave-one-out* (LOO) *cross-validation* (CV) to assess the predictive performance of the linear model. 
+This is done by applying LOO-CV to the log-likelihood matrix of the fitted model.
+We can then plot the estimated shape parameters *k* of the generalised Pareto distribution in order to check the reliability of the LOO expected log pointwise predictive (`elpd`) estimate:
+```{r lin_kplot, cache=TRUE}
+loo_lin <- loo(log_lik(lin_fit))
+par(bg = '#fffff8')
+plot(loo_lin)
+```
+
+All *k* values are below 0.5, indicating quick convergence and solid predicite performance [^5].
+
+## Posterior predictions
+With the linear model fitted, we can now draw posterior predictive samples to answer some of our questions around wages and the gender wage gap.
+
+First, let's have a look at the predicted wages. 
+We show the median and central 95% interval for wages in each age cohort:
+```{r lin_post_wages, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+post_sample_grid <- expand.grid(AGEP = 25:50, 
+                                sex = c("male", "female"), 
+                                Major_Category = c("Education", "Health", "Business"), 
+                                state = c("NY", "TX"),
+                                KEEP.OUT.ATTRS = F,
+                                stringsAsFactors = F)
+
+log_post_lin <- posterior_predict(lin_fit, post_sample_grid, seed = 42)
+exp_post_lin <- exp(log_post_lin)
+
+post_df <- bind_cols(post_sample_grid, as.data.frame(t(exp_post_lin)))
+
+post_long <- post_df %>% 
+  gather(key = "sample_no", value = "predicted_earning", V1:V4000)
+
+ci_post_pred <- post_long %>% 
+  group_by(AGEP, sex, Major_Category, state) %>% 
+  summarise(q_lower = quantile(predicted_earning, 0.025, names = F),
+            median = quantile(predicted_earning, 0.5, names = F),
+            q_upper = quantile(predicted_earning, 0.975, names = F),
+            q90 = quantile(predicted_earning, 0.9, names = F)) %>% 
+  mutate(model = "linear")
+
+ci_post_pred %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median, colour = sex)) +
+  geom_line(aes(y = q_lower, colour = sex), linetype = "dashed") +
+  geom_line(aes(y = q_upper, colour = sex), linetype = "dashed") +
+  ggtitle("Posterior prediction (linear model): yearly wages (median & central 95% interval)") +
+  xlab("age") +
+  ylab("yearly wages in USD") +
+  facet_grid(state ~ Major_Category)
+```
+
+At a first glance, we can already see that the model is not entirely unreasonable:
+it has generally replicated the trends we have seen in the real data, including the existence of a gender wage gap.
+
+In order to show the context of real data more explicitly, we can plot the predictions together with the real data.
+Note that his time around, we plot the data median and the 90% quantile at each age point (instead of mean & two standard deviations earlier).
+Due to high wages being masked in our original dataset, the real data's 97.5% wage quantiles look pretty peculiar (they form a horizontal line across all ages).
+As a consequence, the real data may look different in this plot compared to the earlier one.
+```{r real_v_lin, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+data_intervals_median <- model_df1 %>% 
+  filter(AGEP >= 20,
+         AGEP <= 70) %>% 
+  group_by(AGEP, sex, Major_Category, state) %>% 
+  summarise(median = median(real_wage, na.rm = T),
+            q90 = quantile(real_wage, 0.9, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(model = "data")
+
+bind_rows(ci_post_pred, data_intervals_median) %>% 
+  mutate(plot_cat = paste0(str_sub(sex, 1, 1), " (", model, ")")) %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median, colour = plot_cat)) +
+  geom_line(aes(y = q90, colour = plot_cat), linetype = "dashed") + 
+  scale_colour_manual(values = c("#e31a1c", "#fd8d3c", "#08306b", "#2171b5"),
+                      name = "group") +
+  ggtitle("Posterior prediction (linear model) & real data: yearly wages (median & 90% quantile)") +
+  xlab("age") +
+  ylab("yearly wages in USD") +
+  facet_grid(state ~ Major_Category)
+```
+
+The median values are roughly comparable with the ones in the real data, however our posterior sample shows higher variation than is found in real wage data.
+This is especially prominent in the education and health cohorts -- it seems like our particular "hierarchical" implementation does not allow the Gaussian noise of the different major categories to vary a lot.
+
+Now that we have posterior samples, we can use them to investigate some specific aspects of the wage data by deriving quantities from the posterior sample.
+One such derivation is to calculate the difference of predicted yearly wages for men and women in each panel.
+```{r lin_diff, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+ci_diff<- post_long %>% 
+  spread(key = "sex", value = "predicted_earning") %>% 
+  mutate(diff_mf = male - female) %>%
+  group_by(AGEP, Major_Category, state) %>%
+  summarise(q_lower = quantile(diff_mf, 0.025, names = F),
+            median = quantile(diff_mf, 0.5, names = F),
+            q_upper = quantile(diff_mf, 0.975, names = F))
+
+ci_diff %>%
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = median)) +
+  geom_line(aes(y = q_lower), linetype = "dashed") +
+  geom_line(aes(y = q_upper), linetype = "dashed") +
+  ggtitle("Posterior prediction (linear model): wage difference (male - female; central 95% interval)") +
+  xlab("age") +
+  ylab("difference in yearly wages [USD]") +
+  facet_grid(state ~ Major_Category)
+```
+
+It seems like there are disparities between the panels when looking at these wage differences.
+However, as we have alluded to earlier, this might be entirely due to the fact that the wage levels themselves also vary across the panels.
+
+We can see if that is the case by investigating the wage ratio instead of the difference.
+This gives us a relative measure instead of an absolute one.
+A ratio like this is best visualised on the `log2` scale:
+```{r lin_ratio, fig.fullwidth=TRUE, fig.width=10, fig.height=6.5, cache=TRUE}
+ci_ratio <- post_long %>% 
+  spread(key = "sex", value = "predicted_earning") %>% 
+  mutate(ratio_mf = male / female) %>% 
+  group_by(AGEP, Major_Category, state) %>% 
+  summarise(q_lower = quantile(ratio_mf, 0.025, names = F),
+            median = quantile(ratio_mf, 0.5, names = F),
+            q_upper = quantile(ratio_mf, 0.975, names = F)) 
+
+ci_ratio %>% 
+  ggplot(., aes(x = AGEP)) +
+  geom_line(aes(y = log2(median))) +
+  geom_line(aes(y = log2(q_lower)), linetype = "dashed") +
+  geom_line(aes(y = log2(q_upper)), linetype = "dashed") +
+  ggtitle("Posterior prediction (linear model): log2 ratio of wages (male / female; central 95% interval)") +
+  xlab("age") +
+  ylab("log2 ratio of yearly wages") +
+  facet_grid(state ~ Major_Category) 
+```
+
+Unfortunately (in terms of interesting outcomes), it does not seem like we can identify any group differences in the relative gender wage gap trend with this linear model:
+the slope and location of the time series are practically identical across all six panels.
+
+As unexciting as it may be, this happenstance makes it easier to provide a summary of the predicted wage ratios for workers of different ages by simply taking the mean across all six panels:
+```{r lin_ratio_table, results='asis'}
+ci_ratio %>% 
+  filter(AGEP %in% seq(26, 50, 3)) %>% 
+  group_by(AGEP) %>% 
+  summarise(mean_lower = mean(q_lower),
+            mean_50 = mean(median),
+            mean_upper = mean(q_upper)) %>% 
+  mutate(mean_lower = paste0("female ", round(1 / mean_lower, 2), "x higher"),
+         mean_50 = paste0("male ", round(mean_50, 2), "x higher"),
+         mean_upper = paste0("male ", round(mean_upper, 2), "x higher")) %>% 
+  knitr::kable(., col.names = c("age", "2.5%", "50%", "97.5%"), align = "rccc")
+```
+
+This table shows the trends shown from the previous figure on a more tangible scale than the logarithmic scale: as men's relative wages grow larger with age, the credibility intervals of wage ratios shift accordingly.
+
+# Additive mixed model: complexity ramps up
+
 
 
 [^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
@@ -311,3 +482,5 @@ knitr::kable(lin_fit$stan_summary, digits = 2)
 [^3]: Blau, Francine D., and Lawrence M. Kahn. "The gender wage gap: Extent, trends, and explanations." Journal of Economic Literature 55.3 (2017): 789-865.
 
 [^4]: Carnevale et al., "What's It Worth?: The Economic Value of College Majors." Georgetown University Center on Education and the Workforce, 2011. [Website](http://cew.georgetown.edu/whatsitworth)
+
+[^5]: Vehtari, Aki, Andrew Gelman, and Jonah Gabry. "Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC." Statistics and Computing 27.5 (2017): 1413-1432.
