@@ -98,7 +98,7 @@ Variables such as educational level, field of study, maternity leave, work-life 
 An extensive report titled “Graduating to a Pay Gap” by Corbett and Hill (2012) [^1] explores the gender difference in US wages one year after graduation. 
 Corbett and Hill compared the salaries of recent graduates who reported working the same number of hours per week, and found that one year after graduation women earned ~18% less than their male counterparts. 
 As there are differences regarding the college majors and jobs that men and women tend to choose -- for instance, men are more likely to choose fields with relatively higher salaries such as engineering and computer science -- the study grouped college majors into more general categories.
-Analyses were then performed seperately for each category and compared afterwards.
+Analyses were then performed separately for each category and compared afterwards.
 While the study only found minor wage differences for majors in humanities, education and health sciences, there were significant gender wage gaps within the fields of engineering, computer science, business and social sciences. 
 
 While the gender wage gap has shrunk in the US and other developed countries over the last 30 years, this wage convergence seems to stagnate at the moment [^2]. 
@@ -113,7 +113,7 @@ we set out to investigate wage as a function of people's age and how this associ
 Is such an effect equally strong across different fields of work and different states or are wages consistently more equal in some of these groups ?
 These are questions we would like to approach by applying the Bayesian workflow presented in the course.
 
-While we cannot claim that the presented work provides groundbreaking answers to any unsolved research questions surrounding the gender wage gap, we hope that our report is still an informative and enjoyable read.
+While we cannot claim that the presented work provides ground-breaking answers to any unsolved research questions surrounding the gender wage gap, we hope that our report is still an informative and enjoyable read.
 
 # Data
 
@@ -147,7 +147,7 @@ Doing this in a Bayesian setting of course allows us to draw posterior predictiv
 
 For instance, you will see that the wage gap in absolute dollar values is substantially smaller when looking at education graduates as opposed to business graduates. 
 However, wages are generally lower in the education group, so the observation about the wage gap might just be a side effect of this general difference in wages.
-Drawing posterior predicitve samples allows us to check if the difference in the wage gap holds up when looking at relative values rather than absolute ones.
+Drawing posterior predictive samples allows us to check if the difference in the wage gap holds up when looking at relative values rather than absolute ones.
 
 ## Selecting the data subset
 The file `selected_vars.csv` is the starting point for our actual analysis:
@@ -283,9 +283,9 @@ Log-transformed wages will be fitted as a linear function of age with Gaussian n
 We want to allow for the slope of this function to be different between the genders, so we add `sex` as a grouping term.
 In addition, we specify the hierarchical groupings `Major_Category` and `state`.
 
-Sampling takes place with `rstanarm`'s default settings: four chains with 2,000 samples, 1,000 of which are warmup samples.
+Sampling takes place with `rstanarm`'s default settings: four chains with 2,000 samples, 1,000 of which are warm-up samples.
 Default priors are `N(0, 2.5)` for regression coefficients, `N(0, 10)` for intercepts and `exponential(1)` for `sigma` parameters of the Gaussian noise.
-Note that the prior parameters apply after the regression's predictors are centered.
+Note that the prior parameters apply after the regression's predictors are centred.
 ```{r load_stan}
 library(rstan)
 library(rstanarm)
@@ -327,14 +327,14 @@ In summary, the number of divergent transitions is something we take note of, bu
 ## Predictive performance: PSIS-LOO
 We can use *Pareto smoothed importance sampling* (PSIS) *leave-one-out* (LOO) *cross-validation* (CV) to assess the predictive performance of the linear model. 
 This is done by applying LOO-CV to the log-likelihood matrix of the fitted model.
-We can then plot the estimated shape parameters *k* of the generalised Pareto distribution in order to check the reliability of the LOO expected log pointwise predictive (`elpd`) estimate:
+We can then plot the estimated shape parameters *k* of the generalised Pareto distribution in order to check the reliability of the LOO expected log point-wise predictive (`elpd`) estimate:
 ```{r lin_kplot, cache=TRUE}
 loo_lin <- loo(log_lik(lin_fit))
 par(bg = '#fffff8')
 plot(loo_lin)
 ```
 
-All *k* values are below 0.5, indicating quick convergence and solid predicite performance [^5].
+All *k* values are below 0.5, indicating quick convergence and solid predictive performance [^5].
 
 ## Posterior predictions
 With the linear model fitted, we can now draw (4000) posterior predictive samples to answer some of our questions around wages and the gender wage gap.
@@ -465,7 +465,7 @@ ci_ratio %>%
 Unfortunately (in terms of interesting outcomes), it does not seem like we can identify any group differences in the relative gender wage gap trend with this linear model:
 the slope and location of the time series are practically identical across all six panels.
 
-As unexciting as it may be, this happenstance actually makes it easier to provide a summary of the predicted wage ratios for workers of different ages by simply taking the mean across all six panels:
+As unexciting as it may be, this happen-stance actually makes it easier to provide a summary of the predicted wage ratios for workers of different ages by simply taking the mean across all six panels:
 ```{r lin_ratio_table, results='asis'}
 ci_ratio %>% 
   filter(AGEP %in% seq(26, 50, 3)) %>% 
@@ -521,7 +521,7 @@ Once again, we also inspect the trace plots of the sampling chains:
 mcmc_trace(as.array(log_GAMM), np = nuts_params(log_GAMM))
 ```
 
-Compared to the linear model, there are fewer divergent transitions (15), but of course it would be preferrable to see even fewer of them.
+Compared to the linear model, there are fewer divergent transitions (15), but of course it would be preferable to see even fewer of them.
 
 ## Predictive performance: PSIS-LOO
 While the number of divergent transitions has improved from the linear model, PSIS-LOO diagnostics are quite bad with the GAMM model:
@@ -538,7 +538,11 @@ cbind(c("good", "ok", "bad", "very bad"), loo::pareto_k_table(loo_GAMM)) %>%
 ```
 
 Around 54% of the Pareto *k* values are bad or very bad, indicating either that the GAMM fit is poor or the model too complex. 
-While there are endless options for modifying the model looking for an improvement, the few we have tried (flat priors for intercept and smooth function) did not improve the model fit.
+
+While there are endless options for modifying model priors looking for an improvement, the few we have tried (flat priors for intercept and smooth function) did not improve the model fit.
+
+We also tried to reduce the number of knot points from the 9 knots automatically picked by `rstanarm` to 3 knots located at the first, second and third quantiles, based on the premise that the high number of splines might be overkill.
+However, this also did not help regarding the PSIS-LOO diagnostic.
 
 ## Posterior predictions
 Even though the PSIS-LOO diagnostic indicates a poor fit, we will power through for now.
@@ -628,7 +632,7 @@ ci_GAMM_ratio %>%
   facet_grid(state ~ Major_Category) 
 ```
 
-While the linear model showed an increase in the wage gap toward higer ages, but no differences between the panels, we have the opposite problem with the GAMM:
+While the linear model showed an increase in the wage gap toward higher ages, but no differences between the panels, we have the opposite problem with the GAMM:
 the time series lines are pretty much horizontal in all panels, their vertical position, however, differs when comparing the different major categories.
 
 Once again, we can make our observations from the ratio plot more explicit by summarising the interval boundaries and the median for specific groups.
@@ -650,8 +654,32 @@ ci_GAMM_ratio %>%
 ```
 
 # Conclusions and thoughts
-and prayers
+As you probably have realised by now, we did not exaggerate by mentioning in the introduction that *we cannot claim that the presented work provides groundbreaking answers to any unsolved research questions surrounding the gender wage gap*.
 
+Unfortunately, the models we ran have not provided any substantial findings.
+We could demonstrate that the wage gap exists across all ages and backgrounds, but frankly, that's an observation which could probably be made just by looking at the census data summary plots that we provided early on in the report -- although, to be fair, creating those actually did require a non-zero amount of data cleaning work.
+
+So what went wrong?
+
+Let's deal with the elephant in the room right away:
+we did not do ourselves any favours only using `rstanarm` functions instead of writing out explicit *Stan* models. 
+The downsides here are (at least) twofold.
+
+First off, the flexibility during model construction, allowed by sampling methods such as Hamiltonian Monte Carlo, is arguably the biggest strength of modern Bayesian methods.
+While `rstanarm` allows plenty of flexibility for many standard applications like the regression models we have attempted to use, it is inherently less flexible than "proper" *Stan* models are.
+
+Furthermore, using `rstanarm` functions introduces a level of abstraction into the process of building, fitting and checking models.
+Even though there have been fairly obvious problems with some of the models we tried in this project -- frankly, even with the ones that made it into this report -- we often found ourselves somewhat unable to tackle these problems within the syntax of `rstanarm`.
+Obviously, most of this is due to our inexperience with the Bayesian workflow in real-world settings and it would be unfair to just blame all our shortcomings on the interface we used.
+However, for better or worse, the workflow seems to be more immediate and sometimes easier to figure out when writing explicit *Stan* models.
+
+Speaking of workflow, it turns out this workflow is a lot harder to perform when there is no clear analysis path laid out for you (like it was during the assignments).
+In hindsight, this particular dataset was probably a bit too large for beginners such as ourselves.
+Because of the sheer amount of data entries, which was accompanied by insecurity about whether and how to reduce the amount of data -- we also considered using summary statistics instead of individual records -- it was actually not trivial to quickly try out new model set-ups or priors:
+While prototypes could be fitted within seconds during the assignments, sampling run-time easily exceeded an hour for some of the models we tried here.
+
+Bottom line, while the project didn't really lead to any research findings, we have learned plenty about applying the Bayesian workflow in practice.
+We will leave the research -- at least the one in this field -- to the experts.
 
 [^1]: Corbett, Christianne, and Catherine Hill. “Graduating to a Pay Gap: The Earnings of Women and Men One Year after College Graduation. American Association of University Women.” 1111 Sixteenth Street NW, Washington, DC 20036 (2012).
 
